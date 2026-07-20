@@ -8,10 +8,16 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"
   },
-  "keywords": ["express", "api", "eventos"],
+  "keywords": [
+    "express",
+    "api",
+    "eventos"
+  ],
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "mongoose": "^9.7.4"
   }
 }

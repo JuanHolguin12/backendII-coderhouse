@@ -12,9 +12,10 @@ Plataforma de Eventos e Inscripciones: permite a los usuarios explorar eventos, 
 
 - Node.js
 - Express
+- MongoDB + Mongoose
+- bcrypt (hash de contraseñas)
 - dotenv
 - Módulos ESM (import/export)
-- MongoDB (a integrar en próximas entregas)
 
 ## Instalación
 
@@ -42,6 +43,8 @@ npm install
    | JWT_SECRET  | Secreto para firmar tokens JWT                |
 
 ## Cómo ejecutar
+
+> Necesitás una instancia de MongoDB corriendo (local o Atlas) y accesible desde `MONGO_URL`. El servidor no levanta si no logra conectarse a la base de datos.
 
 ```bash
 npm start
@@ -78,8 +81,76 @@ src/
 | ------ | --------------------- | ----------------------------------------------- |
 | GET    | /api/health            | Verifica que el servidor está activo            |
 | GET    | /api/events             | Lista de eventos (vacía por el momento)         |
-| POST   | /api/sessions/register  | Registro de usuario (aún sin lógica de auth)    |
-| POST   | /api/sessions/login     | Login de usuario (aún sin lógica de auth)       |
+| POST   | /api/sessions/register  | Registro de usuario (con validación, hash y persistencia en Mongo) |
+| POST   | /api/sessions/login     | Login de usuario (todavía no implementado)      |
+
+## Registro de usuarios — POST /api/sessions/register
+
+Crea un usuario nuevo. El campo `role` **no** se puede enviar en el body: siempre se asigna `user` por defecto (los roles `organizer`/`admin` se asignarán en próximas entregas mediante lógica interna).
+
+### Body esperado
+
+| Campo        | Tipo   | Obligatorio | Validación                          |
+| ------------ | ------ | ----------- | ------------------------------------ |
+| `first_name` | string | sí          | presencia                            |
+| `last_name`  | string | sí          | presencia                            |
+| `email`      | string | sí          | formato válido; se normaliza (trim + lowercase) antes de guardar |
+| `password`   | string | sí          | mínimo 8 caracteres; se guarda hasheada con bcrypt, nunca en texto plano |
+
+### Ejemplo de request
+
+```bash
+curl -X POST http://localhost:8080/api/sessions/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "first_name": "Ana",
+    "last_name": "Pérez",
+    "email": "Ana@Mail.com ",
+    "password": "Secreta123"
+  }'
+```
+
+### Respuestas posibles
+
+**201 — Registro exitoso** (email normalizado, sin `password`):
+
+```json
+{
+  "status": "success",
+  "payload": {
+    "id": "665f2a...",
+    "first_name": "Ana",
+    "last_name": "Pérez",
+    "email": "ana@mail.com",
+    "role": "user"
+  }
+}
+```
+
+**400 — Campos faltantes, email inválido o password corta:**
+
+```json
+{ "status": "error", "message": "Faltan campos obligatorios" }
+```
+
+**409 — Email ya registrado:**
+
+```json
+{ "status": "error", "message": "El email ya está registrado" }
+```
+
+### Casos a probar
+
+1. Registro exitoso con datos válidos → `201`
+2. Registro con campos faltantes → `400`
+3. Registro con email en formato inválido → `400`
+4. Registro con password de menos de 8 caracteres → `400`
+5. Registro con un email ya existente → `409`
+6. Verificar en MongoDB que el campo `password` está hasheado (no en texto plano):
+   ```bash
+   mongosh "mongodb://localhost:27017/plataforma-eventos" --eval 'db.users.findOne({ email: "ana@mail.com" })'
+   ```
+7. Verificar que la respuesta del endpoint nunca incluye el campo `password`
 
 ## Próximas entregas
 
