@@ -1,0 +1,17 @@
+{
+  "name": "plataforma-eventos-api",
+  "version": "1.0.0",
+  "description": "API REST para la Plataforma de Eventos e Inscripciones - Backend II",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "keywords": ["express", "api", "eventos"],
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
