@@ -1,5 +1,6 @@
 import { usersRepository } from "../repositories/users.repository.js";
-import { hashPassword } from "../utils/hash.js";
+import { hashPassword, comparePassword } from "../utils/hash.js";
+import { signToken } from "../utils/jwt.js";
 import { AppError } from "../utils/errors.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -44,6 +45,27 @@ class SessionsService {
     });
 
     return sanitizeUser(newUser);
+  }
+
+  async login({ email, password }) {
+    if (!email || !password) {
+      throw new AppError("Credenciales inválidas", 401);
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await usersRepository.findByEmail(normalizedEmail);
+    if (!user) {
+      throw new AppError("Credenciales inválidas", 401);
+    }
+
+    const isPasswordValid = await comparePassword(password, user.password);
+    if (!isPasswordValid) {
+      throw new AppError("Credenciales inválidas", 401);
+    }
+
+    const token = signToken({ id: user._id, email: user.email, role: user.role });
+
+    return token;
   }
 }
 
