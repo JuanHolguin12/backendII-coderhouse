@@ -3,19 +3,12 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { usersRepository } from "../repositories/users.repository.js";
 import { hashPassword, comparePassword } from "../utils/hash.js";
 import { verifyToken } from "../utils/jwt.js";
+import { sanitizeUser } from "../utils/sanitizeUser.js";
 
 const { Strategy } = passport;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
-
-const sanitizeUser = (user) => ({
-  id: user._id,
-  first_name: user.first_name,
-  last_name: user.last_name,
-  email: user.email,
-  role: user.role,
-});
 
 class CurrentStrategy extends Strategy {
   authenticate(req) {

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import passport from "passport";
 import { register, login, current, logout } from "../controllers/sessions.controller.js";
+import { auth } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -31,11 +32,7 @@ router.post(
   login
 );
 
-router.get(
-  "/current",
-  authenticate("current", { statusCode: 401, message: "No autenticado" }),
-  current
-);
+router.get("/current", auth, current);
 
 router.post("/logout", logout);
 

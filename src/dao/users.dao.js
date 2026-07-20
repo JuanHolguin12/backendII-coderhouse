@@ -8,6 +8,10 @@ class UsersDao {
   async create(userData) {
     return User.create(userData);
   }
+
+  async findAll() {
+    return User.find();
+  }
 }
 
 export const usersDao = new UsersDao();
