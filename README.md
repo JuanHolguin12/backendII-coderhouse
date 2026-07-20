@@ -2,7 +2,9 @@
 
 Proyecto final de **Backend II (Coderhouse)**: API REST para la gestión de eventos e inscripciones.
 
-Esta pre-entrega establece la base arquitectónica del proyecto: un servidor Express organizado por capas (rutas, controladores, servicios, repositorios, DAO, modelos, middlewares y configuración), listo para escalar en las próximas entregas con autenticación, roles, gestión de eventos, inscripciones y notificaciones.
+El proyecto es un servidor Express organizado por capas (rutas, controladores, servicios, repositorios, DAO, modelos y configuración), listo para escalar en las próximas entregas con roles, gestión de eventos, inscripciones y notificaciones.
+
+Esta pre-entrega (4) refactoriza la autenticación para centralizarla con **Passport.js**: el contrato externo de la API (rutas y respuestas) no cambia respecto de la Pre-entrega 3, pero ahora la lógica de registro, login y usuario actual vive en estrategias de Passport en lugar de estar mezclada en servicios/middlewares ad-hoc.
 
 ## Temática
 
@@ -13,6 +15,7 @@ Plataforma de Eventos e Inscripciones: permite a los usuarios explorar eventos, 
 - Node.js
 - Express
 - MongoDB + Mongoose
+- Passport.js (`passport`, `passport-local`) — estrategias de autenticación centralizadas
 - bcrypt (hash de contraseñas)
 - jsonwebtoken (JWT)
 - cookie-parser (lectura de cookies)
@@ -65,17 +68,19 @@ El servidor quedará disponible en `http://localhost:<PORT>`.
 
 ```
 src/
-├── app.js                # configura Express (no levanta el server)
-├── server.js             # levanta el servidor
-├── config/                # configuración (variables de entorno, etc.)
-├── routes/                # definición de rutas por recurso
-├── controllers/           # manejo de request/response
-├── services/               # lógica de negocio
-├── repositories/           # abstracción de acceso a datos
-├── dao/                    # acceso directo a la base de datos
-├── models/                  # modelos de datos (User, Event)
-├── middlewares/             # middlewares de Express
-└── utils/                   # utilidades varias
+├── app.js                     # configura Express + passport.initialize() (no levanta el server)
+├── server.js                  # levanta el servidor
+├── config/
+│   ├── config.js               # variables de entorno
+│   ├── db.js                   # conexión a MongoDB
+│   └── passport.config.js      # estrategias 'register', 'login' y 'current' centralizadas
+├── routes/                     # definición de rutas por recurso (delegan en passport.authenticate)
+├── controllers/                # manejo de request/response (genera el JWT y setea la cookie)
+├── services/                   # lógica de negocio (eventos; la de sesiones vive en las estrategias)
+├── repositories/                # abstracción de acceso a datos
+├── dao/                         # acceso directo a la base de datos
+├── models/                       # modelos de datos (User, Event)
+└── utils/                        # utilidades varias (jwt, hash, errores)
 ```
 
 ## Rutas disponibles
@@ -88,6 +93,23 @@ src/
 | POST   | /api/sessions/login        | Inicia sesión y setea la cookie `currentUser` (JWT, HttpOnly)   |
 | GET    | /api/sessions/current      | Devuelve el usuario autenticado (requiere cookie válida)        |
 | POST   | /api/sessions/logout       | Cierra sesión eliminando la cookie `currentUser`                |
+
+## Autenticación con Passport.js
+
+La autenticación está centralizada en `src/config/passport.config.js`. `app.js` sólo inicializa Passport (`passport.initialize()`); ni las rutas ni `app.js` conocen la lógica interna de cada estrategia.
+
+| Estrategia | Tipo                          | Usada en                    | Qué hace                                                                                          |
+| ---------- | ----------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `register` | `passport-local`               | `POST /api/sessions/register` | Valida campos, normaliza el email, verifica unicidad, hashea la contraseña (bcrypt) y crea el usuario con rol `user` por defecto |
+| `login`    | `passport-local`               | `POST /api/sessions/login`    | Busca el usuario por email y compara la contraseña con bcrypt; nunca revela cuál de los dos datos falló |
+| `current`  | Estrategia custom (`passport.Strategy`) | `GET /api/sessions/current`   | Lee el JWT desde la cookie `currentUser`, lo verifica y deja `{ id, email, role }` en `req.user`   |
+
+Puntos importantes de la implementación:
+
+- Las estrategias **no generan el JWT ni setean cookies**: sólo autentican y devuelven el usuario (o `false` + motivo de rechazo) a través de `done(...)`. Esa responsabilidad queda en `sessions.controller.js`.
+- Las rutas de `sessions.router.js` delegan siempre en `passport.authenticate('register' | 'login' | 'current', { session: false }, callback)`; el `callback` sólo traduce el resultado de Passport a los códigos de estado y mensajes ya definidos por el contrato (400/401/409), sin agregar lógica de negocio.
+- `POST /api/sessions/logout` no pasa por Passport: sólo limpia la cookie.
+- **Preparado para providers externos**: para sumar Google, GitHub, etc. sólo hay que registrar una nueva estrategia con `passport.use('google', new GoogleStrategy(...))` dentro de `initPassport()` en `passport.config.js` — no hace falta tocar `app.js` ni las rutas existentes.
 
 ## Registro de usuarios — POST /api/sessions/register
 
@@ -192,7 +214,7 @@ curl -i -X POST http://localhost:8080/api/sessions/login \
 
 ## Usuario autenticado — GET /api/sessions/current
 
-Ruta protegida por el middleware `auth` (`src/middlewares/auth.middleware.js`), que lee la cookie `currentUser`, verifica el JWT y guarda el payload en `req.user`.
+Ruta protegida por la estrategia `current` de Passport (`src/config/passport.config.js`), usada como middleware vía `passport.authenticate('current', { session: false }, ...)`. Lee la cookie `currentUser`, verifica el JWT y deja `{ id, email, role }` en `req.user` (sin `password`).
 
 ### Ejemplo de request
 
@@ -242,7 +264,7 @@ curl -b "currentUser=<token>" -X POST http://localhost:8080/api/sessions/logout
 
 ## Próximas entregas
 
-- Passport (estrategias de autenticación)
+- Autenticación con providers externos (Google, GitHub, etc.) como nuevas estrategias en `passport.config.js`
 - Roles y autorización
 - Gestión completa de eventos
 - Inscripciones y control de cupos
