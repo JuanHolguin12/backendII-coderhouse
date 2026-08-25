@@ -421,9 +421,93 @@ curl -b "currentUser=<token>" -X POST http://localhost:8080/api/sessions/logout
 8. **Búsqueda paginada y filtrada:** `GET /api/events?status=published&category=workshop&page=2&limit=5` devuelve los metadatos paginados (`page`, `limit`, `total`, `totalPages`, `data`) correspondientes a la consulta.
 9. **Detalle de recurso inexistente:** `/api/events/<fake_id>` → `404` (`Evento no encontrado`).
 
+## Inscripciones y Tickets
+
+Esta pre-entrega implementa el flujo de registro de usuarios a eventos para control de cupos y emisión de comprobantes.
+
+### Modelo de Ticket
+El modelo `Ticket` (`src/models/Ticket.js`) gestiona las reservas y contiene referencias directas a `User` y `Event` en lugar de embeberlos.
+- `user`: Referencia `ObjectId` al usuario inscrito.
+- `event`: Referencia `ObjectId` al evento relacionado.
+- `status`: Estado del ticket (`confirmed`, `pending`, `cancelled`).
+- `quantity`: Cantidad de cupos reservados en la operación.
+- `reservationCode`: Código único autogenerado con formato `RES-<HEX>`.
+- `cancelledAt`: Marca de tiempo cuando el ticket fue cancelado.
+
+### Endpoints de Inscripciones
+
+#### 1. Inscribirse a un Evento (Emisión de Ticket)
+* **Método:** `POST`
+* **Ruta:** `/api/events/:eid/tickets`
+* **Acceso:** Cualquier usuario autenticado (`auth`)
+* **Body:**
+  ```json
+  {
+    "quantity": 2
+  }
+  ```
+* **Reglas de negocio y validación (en capa de servicios):**
+  * El evento correspondiente a `eid` debe existir y tener estado `published`.
+  * La cantidad (`quantity`) debe ser un entero positivo.
+  * El total de cupos comprados (`quantity`) no puede superar los cupos disponibles:  
+    $$\text{Cupos Disponibles} = \text{Capacidad total del evento} - \sum \text{quantity de tickets activos (confirmed/pending)}$$
+  * Los tickets cancelados (`cancelled`) no ocupan cupo ni se cuentan.
+  * Un usuario solo puede registrar **un ticket activo a la vez** por evento (evita inscripciones duplicadas).
+  * Genera un código de reserva seguro y envía un correo electrónico de confirmación automático usando **Nodemailer**.
+
+#### 2. Consultar mis Inscripciones
+* **Método:** `GET`
+* **Ruta:** `/api/tickets/my-tickets`
+* **Acceso:** Usuario autenticado
+* **Query Parameters:** `page`, `limit` (soporte de paginación)
+* **Respuesta Exitosa (200):** Devuelve lista de tickets correspondientes al usuario. Se realiza populate sobre el evento mostrando únicamente: `title`, `date`, y `location` (seguridad de los datos).
+
+#### 3. Ver Inscritos a un Evento
+* **Método:** `GET`
+* **Ruta:** `/api/events/:eid/tickets`
+* **Acceso:** Organizador dueño del evento o usuario con rol `admin`
+* **Respuesta Exitosa (200):** Colección de todos los tickets emitidos para ese evento específico. Responde `403` si se intenta consultar un evento ajeno.
+
+#### 4. Cancelar Inscripción
+* **Método:** `PATCH`
+* **Ruta:** `/api/tickets/:tid/cancel`
+* **Acceso:** Dueño del ticket o `admin`
+* **Reglas de negocio:**
+  * Al cancelar, el estado del ticket pasa a `cancelled` y se completa `cancelledAt`. El documento no se borra físicamente.
+  * El cupo que ocupaba el ticket cancelado se libera y queda disponible inmediatamente para otros usuarios.
+  * Responde con `403` si un usuario común intenta cancelar una reserva ajena.
+
+---
+
+### Configuración de Correo (Nodemailer)
+Las credenciales de correo se administran desde variables de entorno y están centralizadas en `src/config/config.js`.
+
+* **MAIL_HOST**: Servidor SMTP de correos (ej: `smtp.gmail.com`).
+* **MAIL_PORT**: Puerto del servidor (ej: `587` o `465`).
+* **MAIL_USER**: Cuenta de correo electrónico de origen.
+* **MAIL_PASS**: Contraseña de aplicación o credencial del correo SMTP.
+* **MAIL_FROM**: Dirección de remitente mostrada en el correo.
+
+*Nota de desarrollo: Durante el entorno de testing o si las variables poseen valores genéricos/de prueba, el sistema simula el envío enviando un mensaje mockeado al log de consola en lugar de arrojar un error de SMTP, asegurando la continuidad del flujo.*
+
+---
+
+### Casos a probar (pre-entrega 7)
+
+1. **Inscripción exitosa:** Retorna `201` con los datos del ticket y el estado inicial `confirmed`, logueando el envío de mail.
+2. **Inscripción sin sesión:** Llamar a `/tickets` o `/events/:eid/tickets` sin autenticar → `401` (`No autenticado`).
+3. **Inscripción a evento inexistente:** Registrar en `fake_id` → `404` (`Evento no encontrado`).
+4. **Inscripción a evento no activo (draft/cancelled):** Intentar registrarse en evento no publicado → `400` (`El evento debe estar en estado publicado para poder inscribirse`).
+5. **Inscripción por encima del cupo restante:** Intentar comprar más de los lugares permitidos → `400` (`Cupos insuficientes`).
+6. **Inscripción duplicada activa:** Registrarse dos veces al mismo evento → `400` (`Ya tenés una inscripción activa para este evento`).
+7. **Cancelación propia:** Un usuario cancela su propio ticket → `200` y libera el cupo. Una posterior inscripción por ese cupo funciona con éxito.
+8. **Cancelación de ticket ajeno como user:** Intentar cancelar el ticket de otro usuario → `403` (`No tenés permisos para cancelar este ticket`).
+9. **Listar tickets de evento como user común:** Solicitar el listado de tickets de un evento con rol `user` → `403` (`No tenés permisos para ver las inscripciones de este evento`).
+10. **Listar tickets de evento ajeno como organizer:** Intentar ver inscripciones de un evento del cuál no eres organizador → `403`.
+
 ## Próximas entregas
 
 - Autenticación con providers externos (Google, GitHub, etc.) como nuevas estrategias en `passport.config.js`
-- Inscripciones y control de cupos
-- Notificaciones
+- Notificaciones push y alertas en vivo
+
 
