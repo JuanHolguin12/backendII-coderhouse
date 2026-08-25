@@ -1,5 +1,6 @@
 import { config } from "../config/config.js";
 import { signToken } from "../utils/jwt.js";
+import { UserDto } from "../dto/user.dto.js";
 
 const COOKIE_MAX_AGE = 3600000;
 
@@ -23,8 +24,7 @@ export const login = (req, res) => {
 };
 
 export const current = (req, res) => {
-  const { id, email, role } = req.user;
-  res.status(200).json({ status: "success", payload: { id, email, role } });
+  res.status(200).json({ status: "success", payload: new UserDto(req.user) });
 };
 
 export const logout = (req, res) => {

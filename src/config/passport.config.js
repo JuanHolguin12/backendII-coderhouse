@@ -3,7 +3,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { usersRepository } from "../repositories/users.repository.js";
 import { hashPassword, comparePassword } from "../utils/hash.js";
 import { verifyToken } from "../utils/jwt.js";
-import { sanitizeUser } from "../utils/sanitizeUser.js";
+import { UserDto } from "../dto/user.dto.js";
 
 const { Strategy } = passport;
 
@@ -64,7 +64,7 @@ const registerStrategy = new LocalStrategy(
         password: hashedPassword,
       });
 
-      return done(null, sanitizeUser(newUser));
+      return done(null, new UserDto(newUser));
     } catch (error) {
       return done(error);
     }

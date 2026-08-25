@@ -1,20 +1,10 @@
 import { eventsRepository } from "../repositories/events.repository.js";
 import { AppError } from "../utils/errors.js";
+import { EventDto } from "../dto/event.dto.js";
 
 const REQUIRED_FIELDS = ["title", "description", "category", "date", "location", "capacity", "price"];
 
-const sanitizeEvent = (event) => ({
-  id: event._id,
-  title: event.title,
-  description: event.description,
-  category: event.category,
-  date: event.date,
-  location: event.location,
-  capacity: event.capacity,
-  price: event.price,
-  organizer: event.organizer,
-  status: event.status,
-});
+
 
 const isOwner = (event, userId) => event.organizer.toString() === userId.toString();
 
@@ -42,7 +32,7 @@ class EventsService {
     const result = await eventsRepository.getAll({ query, page, limit, sort });
 
     return {
-      data: result.data.map(sanitizeEvent),
+      data: result.data.map((event) => new EventDto(event)),
       page: result.page,
       limit: result.limit,
       total: result.total,
@@ -52,7 +42,7 @@ class EventsService {
 
   async getPublished() {
     const events = await eventsRepository.getPublished();
-    return events.map(sanitizeEvent);
+    return events.map((event) => new EventDto(event));
   }
 
   async getById(id) {
@@ -60,7 +50,7 @@ class EventsService {
     if (!event) {
       throw new AppError("Evento no encontrado", 404);
     }
-    return sanitizeEvent(event);
+    return new EventDto(event);
   }
 
   async create({ title, description, category, date, location, capacity, price }, organizerId) {
@@ -97,7 +87,7 @@ class EventsService {
       organizer: organizerId,
     });
 
-    return sanitizeEvent(newEvent);
+    return new EventDto(newEvent);
   }
 
   async update(id, updates, requestingUser) {
@@ -130,7 +120,7 @@ class EventsService {
       pickDefined({ title, description, category, date, location, capacity, price })
     );
 
-    return sanitizeEvent(updatedEvent);
+    return new EventDto(updatedEvent);
   }
 
   async updateStatus(id, newStatus, requestingUser) {
@@ -156,7 +146,7 @@ class EventsService {
     }
 
     const updatedEvent = await eventsRepository.updateById(id, { status: newStatus });
-    return sanitizeEvent(updatedEvent);
+    return new EventDto(updatedEvent);
   }
 
   async cancel(id, requestingUser) {

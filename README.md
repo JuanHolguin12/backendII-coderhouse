@@ -70,22 +70,23 @@ El servidor quedará disponible en `http://localhost:<PORT>`.
 
 ```
 src/
-├── app.js                     # configura Express + passport.initialize() (no levanta el server)
+├── app.js                     # configura Express + middleware de ruteo y errores (no levanta el server)
 ├── server.js                  # levanta el servidor
 ├── config/
-│   ├── config.js               # variables de entorno
+│   ├── config.js               # variables de entorno (port, mongo_url, jwt, mailer)
 │   ├── db.js                   # conexión a MongoDB
 │   └── passport.config.js      # estrategias 'register', 'login' y 'current' centralizadas
 ├── middlewares/
 │   ├── auth.middleware.js      # autenticación (ejecuta la estrategia 'current') → 401 si no hay sesión
 │   └── authorize.middleware.js # autorización por rol → 403 si el rol no coincide
-├── routes/                     # definición de rutas por recurso (delegan en passport.authenticate/auth/authorize)
-├── controllers/                # manejo de request/response (genera el JWT y setea la cookie)
-├── services/                   # lógica de negocio (eventos, usuarios; la de sesiones vive en las estrategias)
-├── repositories/                # abstracción de acceso a datos
-├── dao/                         # acceso directo a la base de datos
-├── models/                       # modelos de datos (User, Event)
-└── utils/                        # utilidades varias (jwt, hash, errores, sanitizeUser)
+├── routes/                     # ruteo y delegación en middlewares/controladores
+├── controllers/                # extracción de params y coordinación de request/response
+├── services/                   # lógica de negocio y validación de reglas de negocio
+├── repositories/                # abstracción e interfaz intermedia de persistencia de datos
+├── dao/                         # operaciones directas de Mongoose sobre la base de datos
+├── dto/                         # DTOs para estructurar respuestas (UserDto, EventDto, TicketDto)
+├── models/                       # modelos y esquemas de Mongoose (User, Event, Ticket)
+└── utils/                        # clases de error personalizadas, hashing y JWT helpers
 ```
 
 ## Rutas disponibles
@@ -505,9 +506,42 @@ Las credenciales de correo se administran desde variables de entorno y están ce
 9. **Listar tickets de evento como user común:** Solicitar el listado de tickets de un evento con rol `user` → `403` (`No tenés permisos para ver las inscripciones de este evento`).
 10. **Listar tickets de evento ajeno como organizer:** Intentar ver inscripciones de un evento del cuál no eres organizador → `403`.
 
-## Próximas entregas
+## Arquitectura por Capas y DTO (Data Transfer Object)
 
-- Autenticación con providers externos (Google, GitHub, etc.) como nuevas estrategias en `passport.config.js`
-- Notificaciones push y alertas en vivo
+La aplicación sigue un diseño estrictamente estructurado por capas:
+1. **Modelos** (`src/models/`): Mongoose define los esquemas (User, Event, Ticket). **Los modelos solo son importados en la capa DAO**, evitando que la lógica de negocio técnica de Mongoose se propague por todo el código.
+2. **DAO** (`src/dao/`): Ejecuta directamente búsquedas y modificaciones en la base de datos de MongoDB.
+3. **Repositories** (`src/repositories/`): Modulo intermedio que expone métodos limpios e independiza el ruteo de la lógica concreta de persistencia (siguiendo el patrón Repository). El servicio consume exclusivamente el repositorio.
+4. **DTO** (`src/dto/`): Los controladores exponen información serializada a través de esta capa. Las clases `UserDto`, `EventDto` y `TicketDto` limpian y formatean los objetos antes de ser enviados en la respuesta JSON o en payloads de cookies, garantizando que el campo `password` o campos internos temporales de la base de datos **nunca sean expuestos al exterior**.
+5. **Services** (`src/services/`): Contiene la lógica de negocio y las validaciones de los criterios de las entregas anteriores.
+6. **Controllers/Routers** (`src/controllers/` y `src/routes/`): Manejan la recepción de parámetros, la autenticación y las respuestas HTTP, delegando el procesamiento pesado en los servicios.
+
+---
+
+### Flujo Completo de la Entrega Final
+
+1. **Autenticación e Identidad:**
+   * **Registro público:** `POST /api/sessions/register` crea un usuario con rol `user` por defecto (ignora cualquier rol provisto en el body). La respuesta del usuario viaja filtrada por `UserDto` (sin password).
+   * **Login:** `POST /api/sessions/login` verifica credenciales, firma un JWT y lo devuelve en la cookie de seguridad `currentUser` (HttpOnly, SameSite Lax).
+   * **Current:** `GET /api/sessions/current` brinda el usuario actualmente logueado mapeado vía `UserDto` (sin password).
+   * **Logout:** `POST /api/sessions/logout` limpia la cookie de sesión.
+
+2. **Gestión de Eventos:**
+   * Un usuario con rol `user` común no tiene permisos para crear eventos (`403`).
+   * Un organizador (`organizer`) crea un evento, el cual inicia en estado `draft`.
+   * El organizador cambia el estado del evento a `published` (`PATCH /api/events/:eid/status`).
+   * Un organizador no puede modificar eventos de terceros (`403`). Un `admin` puede modificar o actualizar cualquier evento (`200`).
+
+3. **Inscripciones y Cupos:**
+   * Un usuario se inscribe indicando la cantidad de entradas (`POST /api/events/:eid/tickets`). Se valida que el evento esté publicado y que cuente con cupos suficientes.
+   * La operación deduce los cupos:
+     $$\text{Cupos Libres} = \text{Capacidad} - \sum \text{quantity en Tickets activos}$$
+   * Si el usuario se inscribe de nuevo o pida más entradas de las disponibles, la petición arroja error de conflicto (`409`).
+   * Al inscribirse con éxito, se envía un correo de confirmación con **Nodemailer** y el código único de reserva (ej. `RES-A8FC13`), devolviendo el `TicketDto`.
+   * El usuario o un `admin` pueden cancelar la inscripción (`PATCH /api/tickets/:tid/cancel`). El ticket pasa a `cancelled` y su marca de tiempo `cancelledAt` es guardada. El cupo se libera de manera automática.
+
+4. **Usuarios e Inicios de Prueba:**
+   * Si necesitás usuarios organizadores o administradores para pruebas manuales en Postman, podés crearlos directamente ejecutando las peticiones de registro o cambiando el campo `role` por consola de MongoDB (`"role": "organizer"` o `"role": "admin"`), o bien usando las credenciales automatizadas del script de tests.
+
 
 

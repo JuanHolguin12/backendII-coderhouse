@@ -3,17 +3,9 @@ import { ticketsRepository } from "../repositories/tickets.repository.js";
 import { eventsRepository } from "../repositories/events.repository.js";
 import { mailService } from "./mail.service.js";
 import { AppError } from "../utils/errors.js";
+import { TicketDto } from "../dto/ticket.dto.js";
 
-const sanitizeTicket = (ticket) => ({
-  id: ticket._id,
-  user: ticket.user,
-  event: ticket.event,
-  status: ticket.status,
-  quantity: ticket.quantity,
-  reservationCode: ticket.reservationCode,
-  createdAt: ticket.createdAt,
-  cancelledAt: ticket.cancelledAt,
-});
+
 
 class TicketsService {
   async createTicket({ eventId, quantity }, requestingUser) {
@@ -39,13 +31,13 @@ class TicketsService {
     const availableCapacity = event.capacity - occupiedCapacity;
 
     if (qty > availableCapacity) {
-      throw new AppError(`Cupos insuficientes. Cupos disponibles: ${availableCapacity}`, 400);
+      throw new AppError(`Cupos insuficientes. Cupos disponibles: ${availableCapacity}`, 409);
     }
 
     // 4. Inscripción duplicada activa (una sola inscripción confirmada/pendiente por usuario)
     const existingActiveTicket = await ticketsRepository.getByUserAndEventActive(requestingUser.id, eventId);
     if (existingActiveTicket) {
-      throw new AppError("Ya tenés una inscripción activa para este evento", 400);
+      throw new AppError("Ya tenés una inscripción activa para este evento", 409);
     }
 
     // 5. Generar código de reserva único
@@ -63,7 +55,7 @@ class TicketsService {
     // 7. Enviar email de confirmación (asíncronamente, no bloquea respuesta)
     mailService.sendTicketConfirmation(requestingUser.email, ticket, event);
 
-    return sanitizeTicket(ticket);
+    return new TicketDto(ticket);
   }
 
   async cancelTicket(ticketId, requestingUser) {
@@ -89,7 +81,7 @@ class TicketsService {
       cancelledAt: new Date(),
     });
 
-    return sanitizeTicket(updatedTicket);
+    return new TicketDto(updatedTicket);
   }
 
   async getEventTickets(eventId, requestingUser) {
@@ -110,7 +102,7 @@ class TicketsService {
       limit: 1000,
     });
 
-    return tickets.data.map(sanitizeTicket);
+    return tickets.data.map((tkt) => new TicketDto(tkt));
   }
 
   async getMyTickets(userId, { page = 1, limit = 10 } = {}) {
@@ -121,18 +113,7 @@ class TicketsService {
     });
 
     return {
-      data: result.data.map((tkt) => {
-        const sanitized = sanitizeTicket(tkt);
-        if (tkt.event) {
-          sanitized.event = {
-            id: tkt.event._id,
-            title: tkt.event.title,
-            date: tkt.event.date,
-            location: tkt.event.location,
-          };
-        }
-        return sanitized;
-      }),
+      data: result.data.map((tkt) => new TicketDto(tkt)),
       page: result.page,
       limit: result.limit,
       total: result.total,
