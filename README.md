@@ -543,5 +543,18 @@ La aplicación sigue un diseño estrictamente estructurado por capas:
 4. **Usuarios e Inicios de Prueba:**
    * Si necesitás usuarios organizadores o administradores para pruebas manuales en Postman, podés crearlos directamente ejecutando las peticiones de registro o cambiando el campo `role` por consola de MongoDB (`"role": "organizer"` o `"role": "admin"`), o bien usando las credenciales automatizadas del script de tests.
 
+## Colección de Postman
+
+Se incluye el archivo [plataforma_eventos.postman_collection.json](plataforma_eventos.postman_collection.json) con todas las solicitudes requeridas para interactuar con la API:
+
+1. **Importación:** 
+   * Abre Postman, haz clic en **Import** y selecciona el archivo `plataforma_eventos.postman_collection.json` de la raíz del proyecto.
+2. **Variables de Colección:**
+   * La colección cuenta con la variable `baseUrl` preconfigurada en `http://localhost:8080/api`.
+   * Cuenta con las variables dinámicas `eid` (ID de evento para peticiones relacionadas) y `tid` (ID de ticket para cancelación) para facilitar las pruebas secuenciales sin tener que reescribir URLs.
+3. **Manejo de Sesiones / Cookies:**
+   * Al hacer Login exitoso, Postman almacena la cookie `currentUser` y la envía automáticamente en las solicitudes subsecuentes que requieren autenticación, simulando el comportamiento nativo del navegador.
+
+
 
 
