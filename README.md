@@ -310,67 +310,120 @@ curl -b "currentUser=<token>" -X POST http://localhost:8080/api/sessions/logout
 4. `/current` sin cookie → `401`
 5. `/current` con token manipulado o expirado → `401`
 
-## Eventos — POST/PUT/DELETE /api/events
+## Eventos
 
-`GET /api/events` y `GET /api/events/:id` son públicas. Crear, modificar y cancelar requieren sesión (`auth`) y rol `organizer` o `admin` (`authorize("organizer", "admin")`); además, modificar/cancelar valida propiedad del recurso (ver [Roles y autorización](#roles-y-autorización)).
+`GET /api/events` y `GET /api/events/:id` son públicas. Crear, modificar y cambiar el estado (incluyendo cancelar) requieren sesión (`auth`) y rol `organizer` o `admin` (`authorize("organizer", "admin")`).
 
-### POST /api/events con rol `user` → 403 (autenticado pero sin permiso)
+### Endpoints de Eventos
 
-```json
-{ "status": "error", "message": "No tenés permisos para realizar esta acción" }
-```
-
-### POST /api/events con rol `organizer` o `admin` → 201
-
-```json
-{
-  "status": "success",
-  "payload": {
-    "id": "6690...",
-    "title": "Congreso Tech 2026",
-    "description": "...",
-    "date": "2026-08-01T00:00:00.000Z",
-    "location": "CABA",
-    "capacity": 100,
-    "organizer": "665f2a...",
-    "status": "published"
+#### 1. Listar Eventos con Filtros, Paginación y Ordenamiento
+* **Método:** `GET`
+* **Ruta:** `/api/events`
+* **Acceso:** Público (Suma filtros y paginación)
+* **Query Parameters Soportados:**
+  * `status`: Filtra por estado (`draft`, `published`, `cancelled`, `finished`).
+  * `category`: Filtra por categoría.
+  * `location`: Filtra por ubicación.
+  * `dateFrom`: Filtra eventos desde una fecha exacta (ej: `2026-08-01`).
+  * `dateTo`: Filtra eventos hasta una fecha exacta (ej: `2026-08-31`).
+  * `page`: Número de página (por defecto `1`).
+  * `limit`: Cantidad de resultados por página (por defecto `10`).
+  * `sort`: Campo para ordenar los resultados (por defecto `date`, ascendente. Se puede usar `-date` para descendente, etc.).
+* **Respuesta Exitosa (200):**
+  ```json
+  {
+    "status": "success",
+    "payload": {
+      "data": [
+        {
+          "id": "673f4e...",
+          "title": "Workshop Avanzado de Node",
+          "description": "Aprende patrones avanzados y testing.",
+          "category": "workshop",
+          "date": "2026-10-15T18:00:00.000Z",
+          "location": "Uruguay",
+          "capacity": 25,
+          "price": 10.5,
+          "organizer": "65bfae...",
+          "status": "published"
+        }
+      ],
+      "page": 2,
+      "limit": 5,
+      "total": 6,
+      "totalPages": 2
+    }
   }
-}
-```
+  ```
 
-### Ruta privada sin cookie (cualquiera de las anteriores) → 401
+#### 2. Obtener Detalle de un Evento
+* **Método:** `GET`
+* **Ruta:** `/api/events/:id`
+* **Acceso:** Público
+* **Respuesta Exitosa (200):** Evento sanitizado correspondiente al ID.
+* **Respuesta Error (404):** `{ "status": "error", "message": "Evento no encontrado" }`
 
-```json
-{ "status": "error", "message": "No autenticado" }
-```
+#### 3. Crear Evento
+* **Método:** `POST`
+* **Ruta:** `/api/events`
+* **Acceso:** `organizer`, `admin`
+* **Body:**
+  ```json
+  {
+    "title": "Congreso Tech 2026",
+    "description": "El evento del año",
+    "category": "tecnología",
+    "date": "2026-12-01T09:00:00.000Z",
+    "location": "Buenos Aires",
+    "capacity": 150,
+    "price": 15
+  }
+  ```
+  *(Nota: El `organizer` se auto-asigna a partir del token JWT del usuario logueado en la request; es ignorado si viene en el body).*
+* **Reglas de Negocio / Validaciones en Creación:**
+  * Todos los campos mínimos son obligatorios.
+  * No se permiten fechas en el pasado (`date < new Date()`).
+  * La capacidad (`capacity`) debe ser mayor a 0.
+  * El precio (`price`) debe ser mayor o igual a 0.
+  * Por defecto, el estado asignado es `draft`.
 
-### PUT /api/events/:id — `organizer` sobre un evento ajeno → 403
+#### 4. Modificar Evento
+* **Método:** `PUT`
+* **Ruta:** `/api/events/:id`
+* **Acceso:** Organizador dueño del evento o `admin`
+* **Reglas de Negocio / Validaciones en Modificación:**
+  * Si el usuario logueado no es `admin` ni el creador del evento, responde con `403` (`No podés modificar un evento que no te pertenece`).
+  * Si el evento actual posee un estado `cancelled` o `finished`, no se permiten modificaciones (responde `400`).
+  * Si la capacidad es modificada, debe ser `capacity > 0`.
+  * Si el precio es modificado, debe ser `price >= 0`.
 
-```json
-{ "status": "error", "message": "No podés modificar un evento que no te pertenece" }
-```
+#### 5. Modificar Estado / Cancelar Evento
+* **Método:** `PATCH` o `DELETE`
+* **Ruta:** `/api/events/:id/status` (o `DELETE /api/events/:id` para cancelar automáticamente)
+* **Acceso:** Organizador dueño del evento o `admin`
+* **Valores aceptados en status:** `draft`, `published`, `cancelled`, `finished`
+* **Reglas de Negocio en Cambio de Estado:**
+  * Si el evento ya se encuentra `cancelled` (cancelado) o `finished` (finalizado), no se permite retroceder o cambiar su estado (responde `400`).
+  * Se requiere que el solicitante sea dueño del evento o un `admin` (responde `403` si no se cumple).
+  * Los eventos cancelados permanencen archivados en la base de datos (no se eliminan físicamente).
 
-### GET /api/users — ruta administrativa
+---
 
-Sólo `admin`. Devuelve todos los usuarios registrados, sin el campo `password`.
+### Casos a probar (roles, validaciones y filtros)
 
-**403** si el rol autenticado no es `admin`:
-
-```json
-{ "status": "error", "message": "No tenés permisos para realizar esta acción" }
-```
-
-### Casos a probar (roles y autorización)
-
-1. `POST /api/events` con rol `user` → `403`
-2. `POST /api/events` con rol `organizer` → éxito (`201`)
-3. `GET /api/users` con rol `organizer` → `403`
-4. `GET /api/users` con rol `admin` → éxito (`200`)
-5. Cualquier ruta privada sin cookie → `401`
-6. `organizer` intentando modificar/cancelar un evento ajeno → `403`; `admin` puede hacerlo sobre cualquier evento
+1. **Crear evento con rol user:** Intentar enviar un POST sin los permisos necesarios → `403` (`No tenés permisos para realizar esta acción`).
+2. **Crear evento con fecha pasada:** Intentar crear un evento fechado en el pasado → `400` (`No se permiten fechas pasadas`).
+3. **Crear evento con capacidad 0:** Intentar crear con capacidad inválida → `400` (`La capacidad debe ser mayor a 0`).
+4. **Modificación exitosa por el creador:** Un `organizer` que creó el evento puede realizar PUT exitosamente.
+5. **Modificación fallida por otro organizador:** Intentar modificar siendo un `organizer` que no es dueño del evento → `403` (`No podés modificar un evento que no te pertenece`).
+6. **Modificación exitosa por administrador:** Un usuario con rol `admin` modifica un evento creado por cualquier organizador.
+7. **Modificar evento cancelado:** Intentar aplicar PUT o PATCH en un evento cuyo estado ya es `cancelled` o `finished` → `400`.
+8. **Búsqueda paginada y filtrada:** `GET /api/events?status=published&category=workshop&page=2&limit=5` devuelve los metadatos paginados (`page`, `limit`, `total`, `totalPages`, `data`) correspondientes a la consulta.
+9. **Detalle de recurso inexistente:** `/api/events/<fake_id>` → `404` (`Evento no encontrado`).
 
 ## Próximas entregas
 
 - Autenticación con providers externos (Google, GitHub, etc.) como nuevas estrategias en `passport.config.js`
 - Inscripciones y control de cupos
 - Notificaciones
+

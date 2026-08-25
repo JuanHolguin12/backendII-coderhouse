@@ -13,6 +13,25 @@ class EventsDao {
     return Event.findById(id);
   }
 
+  async findPaginated({ query = {}, page = 1, limit = 10, sort = "date" }) {
+    const skip = (page - 1) * limit;
+    const data = await Event.find(query)
+      .sort(sort)
+      .skip(parseInt(skip))
+      .limit(parseInt(limit));
+
+    const total = await Event.countDocuments(query);
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      totalPages,
+    };
+  }
+
   async updateById(id, updates) {
     return Event.findByIdAndUpdate(id, updates, { new: true });
   }

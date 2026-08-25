@@ -13,6 +13,10 @@ class EventsRepository {
     return eventsDao.findById(id);
   }
 
+  async getAll({ query, page, limit, sort }) {
+    return eventsDao.findPaginated({ query, page, limit, sort });
+  }
+
   async updateById(id, updates) {
     return eventsDao.updateById(id, updates);
   }
